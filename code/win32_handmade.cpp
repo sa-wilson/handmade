@@ -67,8 +67,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine,
 	//	WindowClass.hIcon;
 	WindowClass.lpszClassName = "HandmadeHeroWindowClass";
 
-	if (RegisterClass(&WindowClass)) {
-		HWND WindowHandle = CreateWindowEx(
+	if (RegisterClassA(&WindowClass)) {
+		HWND WindowHandle = CreateWindowExA(
 			0, WindowClass.lpszClassName, "Handmade Hero",
 			WS_OVERLAPPEDWINDOW|WS_VISIBLE,
 			CW_USEDEFAULT, CW_USEDEFAULT,
@@ -77,10 +77,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine,
 		if (WindowHandle) {
 			for (;;) {
 				MSG Message;
-				BOOL MessageResult = GetMessage(&Message, 0, 0, 0);
+				BOOL MessageResult = GetMessageA(&Message, 0, 0, 0);
 				if (MessageResult > 0) {
 					TranslateMessage(&Message);
-					DispatchMessage(&Message);
+					DispatchMessageA(&Message);
 				} else {
 					break;
 				}
