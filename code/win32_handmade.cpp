@@ -1,24 +1,70 @@
 #include <windows.h>
 
-LRESULT CALLBACK
-MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
-{
-	LRESULT Result = 0;
+// TODO: This is a global for now
+static bool Running; 
+static BITMAPINFO BitmapInfo;
+static void *BitmapMemory;
+static HBITMAP BitmapHandle;
+static HDC BitmapDeviceContext;
 
-	switch (Message) {
+static void
+Win32_ResizeDIBSection(int width, int height)
+{
+	// TODO: Bulletproof this.
+	// Maybe don't free first, free after, then free first if that fails.
+
+	if (BitmapHandle) {
+		DeleteObject(BitmapHandle);
+	} 
+
+	if (!BitmapDeviceContext) {
+		// TODO: Should we recreate these under certain special circumstances?
+		BitmapDeviceContext = CreateCompatibleDC(0);
+	}
+
+	BitmapInfo.bmiHeader.biSize = sizeof BitmapInfo.bmiHeader;
+	BitmapInfo.bmiHeader.biWidth = width;
+	BitmapInfo.bmiHeader.biHeight = height;
+	BitmapInfo.bmiHeader.biPlanes = 1;
+	BitmapInfo.bmiHeader.biBitCount = 32;
+	BitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+	BitmapHandle = CreateDIBSection(
+		BitmapDeviceContext, &BitmapInfo,
+		DIB_RGB_COLORS, &BitmapMemory,
+		NULL, NULL);
+}
+
+static void
+Win32_UpdateWindow(HDC context, int x, int y, int width, int height)
+{
+	StretchDIBits(context,
+		x, y, width, height,
+		x, y, width, height,
+		BitmapMemory,
+		&BitmapInfo,
+		DIB_RGB_COLORS, SRCCOPY);
+}
+
+LRESULT CALLBACK
+Win32_MainWindowCallback(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
+{
+	LRESULT result = 0;
+
+	switch (message) {
 		case WM_SIZE:
 		{
-			OutputDebugStringA("WM_SIZE\n");
+			RECT client_rect;
+			GetClientRect(window, &client_rect);
+			int width = client_rect.right - client_rect.left;
+			int height = client_rect.bottom - client_rect.top;
+			Win32_ResizeDIBSection(width, height);
 		} break;
 
-		case WM_DESTROY:
-		{
-			OutputDebugStringA("WM_DESTROY\n");
-		} break;
 		case WM_CLOSE:
-
 		{
-			OutputDebugStringA("WM_CLOSE\n");
+			// TODO: Handle this with a message to the user?
+			Running = false;
 		} break;
 
 		case WM_ACTIVATEAPP:
@@ -26,61 +72,62 @@ MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 			OutputDebugStringA("WM_ACTIVATEAPP\n");
 		} break;
 
+		case WM_DESTROY:
+		{
+			// TODO: Handle this as an error - recreate window?
+			Running = false;
+		} break;
+
 		case WM_PAINT:
 		{
-			PAINTSTRUCT Paint;
-			HDC DeviceContext = BeginPaint(Window, &Paint);
-			int X = Paint.rcPaint.left;
-			int Y = Paint.rcPaint.top;
-			int Height = Paint.rcPaint.bottom - Paint.rcPaint.top;
-			int Width =  Paint.rcPaint.right - Paint.rcPaint.left;
-			static DWORD Operation = WHITENESS;
-			PatBlt(DeviceContext, X, Y, Width, Height, Operation);
-			if (Operation == WHITENESS) {
-				Operation = BLACKNESS;
-			} else {
-				Operation = WHITENESS;
-			}
-			EndPaint(Window, &Paint);
+			PAINTSTRUCT paint;
+			HDC context = BeginPaint(window, &paint);
+			int x = paint.rcPaint.left;
+			int y = paint.rcPaint.top;
+			int width =  paint.rcPaint.right - paint.rcPaint.left;
+			int height = paint.rcPaint.bottom - paint.rcPaint.top;
+			Win32_UpdateWindow(context, x, y, width, height);
+			EndPaint(window, &paint);
 		} break;
 
 		default:
 		{
 //			OutputDebugStringA("default\n");
-			Result = DefWindowProc(Window, Message, WParam, LParam);
+			result = DefWindowProc(window, message, w_param, l_param);
 		} break;
 	}
 
-	return Result;
+	return result;
 }
 
 int CALLBACK
-WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine,
-	int ShowCode)
+WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line,
+	int show_code)
 {
-	WNDCLASS WindowClass = {};
+	WNDCLASS window_class = {};
 
 	// TODO: Check if HREDRAW, VREDRAW, OWNDC still matter
-	WindowClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
-	WindowClass.lpfnWndProc = MainWindowCallback;
-	WindowClass.hInstance = Instance;
+	window_class.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+	window_class.lpfnWndProc = Win32_MainWindowCallback;
+	window_class.hInstance = instance;
 	//	WindowClass.hIcon;
-	WindowClass.lpszClassName = "HandmadeHeroWindowClass";
+	window_class.lpszClassName = "HandmadeHeroWindowClass";
 
-	if (RegisterClassA(&WindowClass)) {
-		HWND WindowHandle = CreateWindowExA(
-			0, WindowClass.lpszClassName, "Handmade Hero",
+	if (RegisterClassA(&window_class)) {
+		HWND window_handle = CreateWindowExA(
+			0, window_class.lpszClassName, "Handmade Hero",
 			WS_OVERLAPPEDWINDOW|WS_VISIBLE,
 			CW_USEDEFAULT, CW_USEDEFAULT,
 			CW_USEDEFAULT, CW_USEDEFAULT,
-			0, 0, Instance, 0);
-		if (WindowHandle) {
-			for (;;) {
-				MSG Message;
-				BOOL MessageResult = GetMessageA(&Message, 0, 0, 0);
-				if (MessageResult > 0) {
-					TranslateMessage(&Message);
-					DispatchMessageA(&Message);
+			NULL, NULL, instance, NULL);
+		if (window_handle) {
+			Running = true;
+			while (Running) {
+				MSG message;
+				BOOL message_result = GetMessageA(&message, NULL, 0, 0);
+				if (message_result > 0) {
+					TranslateMessage(&message);
+					DispatchMessageA(&message);
 				} else {
 					break;
 				}
